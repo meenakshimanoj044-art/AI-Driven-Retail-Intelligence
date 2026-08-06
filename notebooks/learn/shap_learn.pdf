@@ -1,0 +1,377 @@
+# SHAP (Explainable AI) - Quick Study Notes
+
+## What is SHAP?
+
+**SHAP (SHapley Additive exPlanations)** is an Explainable AI (XAI) technique used to explain the predictions made by machine learning models.
+
+It tells us:
+
+* Which features influenced a prediction.
+* How much each feature contributed.
+* Whether each feature increased or decreased the prediction.
+
+SHAP is based on **Shapley Values** from cooperative game theory, where each feature is treated like a "player" contributing to the final prediction.
+
+---
+
+# Why is SHAP used?
+
+Machine learning models often behave like **black boxes**. They provide predictions but do not explain how they arrived at those predictions.
+
+Example:
+
+Prediction:
+
+```
+Next Month Sales = 250 units
+```
+
+Without SHAP:
+
+* We know the prediction.
+* We don't know why.
+
+With SHAP:
+
+```
+Previous Month Sales    +60
+Rolling Average         +30
+Seasonality             +18
+Average Price          -12
+
+Final Prediction = 250
+```
+
+Now the prediction is explainable.
+
+---
+
+# Why am I using SHAP in my project?
+
+Business Problem:
+
+**Predict next month's product sales.**
+
+Model Used:
+
+**Ridge Regression**
+
+Original Project:
+
+Historical Data
+→ Feature Engineering
+→ Ridge Regression
+→ Predicted Sales
+
+Enhanced Project:
+
+Historical Data
+→ Feature Engineering
+→ Ridge Regression
+→ Predicted Sales
+→ SHAP
+→ Explanation of the Prediction
+
+SHAP improves the interpretability of the forecasting model without changing its prediction.
+
+---
+
+# General SHAP Workflow
+
+## Step 1
+
+Import required libraries
+
+```python
+import shap
+import matplotlib.pyplot as plt
+```
+
+---
+
+## Step 2
+
+Load the trained model
+
+```python
+model = joblib.load(model_path)
+```
+
+Purpose:
+
+Load the already trained machine learning model.
+
+---
+
+## Step 3
+
+Prepare the dataset
+
+```python
+X_test = ...
+```
+
+Purpose:
+
+Use the same feature set that the model uses for prediction.
+
+---
+
+## Step 4
+
+Create the SHAP Explainer
+
+General Syntax
+
+```python
+explainer = shap.Explainer(model, X_test)
+```
+
+Purpose:
+
+The explainer learns how the model makes predictions.
+
+---
+
+## Step 5
+
+Compute SHAP Values
+
+```python
+shap_values = explainer(X_test)
+```
+
+Purpose:
+
+Calculate the contribution of every feature for every prediction.
+
+Output:
+
+Each prediction receives SHAP values for every feature.
+
+---
+
+## Step 6
+
+Generate SHAP Visualizations
+
+### Summary Plot
+
+```python
+shap.summary_plot(shap_values, X_test)
+```
+
+Shows:
+
+* Most important features overall
+* Global feature importance
+* Feature impact direction
+
+---
+
+### Bar Plot
+
+```python
+shap.plots.bar(shap_values)
+```
+
+Shows:
+
+Average importance of every feature.
+
+Easy to compare feature rankings.
+
+---
+
+### Waterfall Plot
+
+```python
+shap.plots.waterfall(shap_values[0])
+```
+
+Shows:
+
+Explanation for one prediction.
+
+Displays:
+
+* Base value
+* Positive contributions
+* Negative contributions
+* Final prediction
+
+---
+
+# Types of Explainability
+
+## Global Explainability
+
+Answers:
+
+"What features are important overall?"
+
+Example:
+
+Rolling Mean
+↓
+
+Previous Month Sales
+↓
+
+Revenue
+
+---
+
+## Local Explainability
+
+Answers:
+
+"Why did THIS product receive THIS prediction?"
+
+Example:
+
+Product A
+
+Prediction = 250
+
+Previous Sales
++60
+
+Seasonality
++20
+
+Price
+−10
+
+Final = 250
+
+---
+
+# Types of SHAP Explainers
+
+### 1. LinearExplainer
+
+Used for:
+
+* Linear Regression
+* Ridge Regression
+* Lasso Regression
+* Logistic Regression
+
+---
+
+### 2. TreeExplainer
+
+Used for:
+
+* Random Forest
+* XGBoost
+* LightGBM
+* CatBoost
+* Decision Trees
+
+Fastest for tree-based models.
+
+---
+
+### 3. DeepExplainer
+
+Used for:
+
+Neural Networks
+
+TensorFlow
+
+PyTorch
+
+---
+
+### 4. KernelExplainer
+
+Used when the model is unsupported.
+
+Works with almost every model.
+
+Slower than other explainers.
+
+---
+
+### 5. Explainer
+
+```python
+explainer = shap.Explainer(model, X_test)
+```
+
+Automatically selects the most suitable explainer.
+
+Recommended when switching between different models.
+
+---
+
+# SHAP Output
+
+SHAP Value > 0
+
+Feature increases prediction.
+
+Example:
+
+Previous Month Sales
+
++35
+
+Prediction increases.
+
+---
+
+SHAP Value < 0
+
+Feature decreases prediction.
+
+Example:
+
+High Price
+
+−15
+
+Prediction decreases.
+
+---
+
+SHAP Value ≈ 0
+
+Feature has little influence.
+
+---
+
+# Benefits of SHAP
+
+* Explains model predictions.
+* Builds trust in AI systems.
+* Makes black-box models interpretable.
+* Identifies the most influential features.
+* Supports better business decisions.
+* Useful for research papers.
+* Widely accepted in Explainable AI research.
+
+---
+
+# Research Contribution
+
+Original Project:
+
+Predict future product sales.
+
+Research Enhancement:
+
+Explain **why** the model predicts future product sales.
+
+Instead of only answering:
+
+"What will happen?"
+
+The model now also answers:
+
+"Why will it happen?"
+
+This transforms the forecasting model into an explainable and transparent decision-support system for retail businesses.

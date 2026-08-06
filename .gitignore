@@ -1,0 +1,33 @@
+# Secrets
+.env
+
+# Virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Models
+*.pkl
+*.joblib
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+logs/
+
+# VS Code
+.vscode/
+
+# Output files
+outputs/
+
+# Large backup dataset
+online_retail_clean_backup.csv
+
+# OS files
+.DS_Store
+Thumbs.db
