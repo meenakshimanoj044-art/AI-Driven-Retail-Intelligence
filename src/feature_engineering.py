@@ -26,7 +26,14 @@ def monthly_features(df: pd.DataFrame):
         monthly[f'lag{lag}_quantity'] = monthly.groupby('StockCode')['MonthlyQuantity'].shift(lag)
 
     # Rolling mean
-    monthly['rolling_mean_3'] = monthly.groupby('StockCode')['MonthlyQuantity'].shift(1).rolling(3).mean()
+    monthly["rolling_mean_3"] = (monthly.groupby("StockCode")["MonthlyQuantity"]
+                                 .transform(
+                                     lambda values: values.shift(1).rolling(
+                                    window=3,
+                                    min_periods=3
+                                    ).mean()
+                                    )
+                                )
 
     # Growth rate
     monthly['GrowthRate'] = monthly.groupby('StockCode')['MonthlyQuantity'].pct_change()
