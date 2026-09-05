@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google import genai
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -11,21 +11,22 @@ def _get_api_key():
     # Support both env var names used by Gemini SDK/docs.
     return os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
-def _configure_genai():
+def _create_client():
     api_key = _get_api_key()
-    if api_key:
-        genai.configure(api_key=api_key)
-    return api_key
+    if not api_key:
+        return None
+
+    return genai.Client(api_key=api_key)
 
 
 def generate_insights(df):
-    api_key = _configure_genai()
+    client = _create_client()
 
     if "Customer_Text" not in df.columns:
         df["insights"] = "Error: Customer_Text column is missing."
         return df
 
-    if not api_key:
+    if not client:
         df["insights"] = "Error: GOOGLE_API_KEY/GEMINI_API_KEY is not set in environment."
         return df
 
@@ -43,18 +44,18 @@ Keep it concise.
 """
 
     model_candidates = [
-        "models/gemini-1.5-pro",
-        "models/gemini-2.5-pro",
-        "models/gemini-pro",
-    ]
+    "gemini-3.6-flash"
+]
 
     for text in df["Customer_Text"]:
         last_error = None
         generated = None
         for model_name in model_candidates:
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt + "\n\n" + str(text))
+                response = client.models.generate_content(
+                model=model_name,
+                contents=prompt + "\n\n" + str(text)
+                )
                 generated = response.text
                 break
             except Exception as e:
