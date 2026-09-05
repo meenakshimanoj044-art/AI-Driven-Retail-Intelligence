@@ -98,7 +98,7 @@ def process_holidays(df):
     df = df.copy()
 
     df.columns = df.columns.str.lower().str.strip()
-    df = df[["date", "countryorregion", "holidayname"]]
+    df = df[["date", "countryorregion", "holidayname"]].copy()
 
     df["date"] = pd.to_datetime(df["date"])
 
@@ -107,18 +107,27 @@ def process_holidays(df):
 
     df["day_of_week"] = df["date"].dt.weekday
     df["month"] = df["date"].dt.month
-    df["is_weekend"] = df["date"].dt.weekday > 5
+    df["is_weekend"] = df["date"].dt.weekday >= 5
     df["month_end"] = df["date"].dt.is_month_end
     df["month_start"] = df["date"].dt.is_month_start
 
-    df["holidayname"] = df["holidayname"].astype(str).str.strip()
-    df["isholiday"] = df["holidayname"].notna().astype(int)
+    df["holidayname"] = df["holidayname"].fillna("Unknown Holiday").astype(str).str.strip()
+    df["isholiday"] = 1
 
     return df
 
 
 def merge_data(retail_df, holiday_df):
-
+    retail_df=retail_df.copy()
+    holiday_df=holiday_df.copy()
+    country_name_map = {
+    "Czech Republic": "Czech",
+    "EIRE": "Ireland",
+    "RSA": "South Africa",
+    "USA": "United States"
+}
+    retail_df["holiday_country"] = retail_df["Country"].astype(str).str.strip().replace(country_name_map)
+    holiday_df=holiday_df[["date","countryorregion","holidayname","isholiday"]].copy()
     # FIX: align dates properly (IMPORTANT from your notebook issue)
     retail_df["InvoiceDate"] = pd.to_datetime(retail_df["InvoiceDate"]).dt.date
     holiday_df["date"] = pd.to_datetime(holiday_df["date"]).dt.date
@@ -126,9 +135,10 @@ def merge_data(retail_df, holiday_df):
     df = pd.merge(
         retail_df,
         holiday_df,
-        left_on="InvoiceDate",
-        right_on="date",
-        how="left"
+        left_on=["InvoiceDate", "holiday_country"],
+        right_on=["date", "countryorregion"],
+        how="left",
+        validate="m:1"
     )
 
     # Fill missing holiday info
@@ -140,6 +150,7 @@ def merge_data(retail_df, holiday_df):
 
     # Drop unnecessary nulls
     df = df.dropna(subset=["InvoiceNo", "StockCode", "Quantity", "UnitPrice", "InvoiceDate", "Revenue"])
+    df=df.drop(columns=["date", "countryorregion", "holiday_country"],errors="ignore")
 
     return df
 
