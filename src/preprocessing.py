@@ -1,174 +1,204 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
 BASE_DIR=Path(__file__).resolve().parent.parent
+def load_data():
+    retail_path=BASE_DIR/"data/raw/online_retail.csv"
+    holidays_path=BASE_DIR/"data/external/publicHolidays.csv"
+    raw_online_retail = pd.read_csv(retail_path)
+    raw_public_holidays = pd.read_csv(holidays_path)
+    return raw_online_retail, raw_public_holidays
 
-def load_data(clean_path: str):
-    df = pd.read_csv(clean_path)
-    df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-    df['YearMonth'] = df['InvoiceDate'].dt.to_period('M')
+
+
+def initial_cleaning(df):
+    df = df.copy()
+
+    # Drop missing CustomerID
+    df = df.dropna(subset=["CustomerID"])
+
+    # Remove duplicates
+    df = df.drop_duplicates(subset=["InvoiceNo", "StockCode", "Quantity", "UnitPrice"])
+
+    # Convert datetime
+    df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
+
     return df
 
 
-def monthly_features(df: pd.DataFrame):
-    monthly = df.groupby(['StockCode', 'YearMonth']).agg(
-        MonthlyQuantity=('Quantity', 'sum'),
-        AvgUnitPrice=('UnitPrice', 'mean'),
-        HolidayCount=('isholiday', 'sum'),
-        MonthlyRevenue=('Revenue', 'sum')
-    ).reset_index()
+def split_datasets(df):
+    purchased_dataset = df[df["Quantity"] > 0].copy()
+    invalid_purchase_dataset = df[df["Quantity"] == 0].copy()
+    return_dataset = df[df["Quantity"] < 0].copy()
 
-    monthly = monthly.sort_values(['StockCode', 'YearMonth'])
+    return purchased_dataset, invalid_purchase_dataset, return_dataset
 
-    # Lag features
-    for lag in [1, 2, 3]:
-        monthly[f'lag{lag}_quantity'] = monthly.groupby('StockCode')['MonthlyQuantity'].shift(lag)
 
-    # Rolling mean
-    monthly["rolling_mean_3"] = (monthly.groupby("StockCode")["MonthlyQuantity"]
-                                 .transform(
-                                     lambda values: values.shift(1).rolling(
-                                    window=3,
-                                    min_periods=3
-                                    ).mean()
-                                    )
-                                )
 
-    # Growth rate
-    monthly['GrowthRate'] = monthly.groupby('StockCode')['MonthlyQuantity'].pct_change(fill_method=None)
-    monthly["GrowthRate"] = monthly["GrowthRate"].replace(
-    [np.inf, -np.inf],
-    np.nan
+def standardize_text(df):
+    df = df.copy()
+
+    df = df[df["StockCode"].notnull()]
+    df["Description"] = df["Description"].astype(str).str.strip().str.lower()
+
+    return df
+
+
+
+def handle_outliers(df):
+    df = df.copy()
+
+    # ---- Quantity Outliers ----
+    Q1_q = df["Quantity"].quantile(0.25)
+    Q3_q = df["Quantity"].quantile(0.75)
+    IQR_q = Q3_q - Q1_q
+    upper_q = Q3_q + 1.5 * IQR_q
+
+    df["Quantity"] = df["Quantity"].clip(upper=upper_q)
+
+    # ---- UnitPrice Outliers ----
+    Q1_u = df["UnitPrice"].quantile(0.25)
+    Q3_u = df["UnitPrice"].quantile(0.75)
+    IQR_u = Q3_u - Q1_u
+    lower_u = Q1_u - 1.5 * IQR_u
+    upper_u = Q3_u + 1.5 * IQR_u
+
+    df = df[(df["UnitPrice"] > 0) & (df["UnitPrice"] < upper_u)]
+
+    return df
+
+
+
+def feature_engineering(df):
+    df = df.copy()
+
+    # Revenue
+    df["Revenue"] = df["Quantity"] * df["UnitPrice"]
+
+    # Time features
+    df = df.sort_values(by=["CustomerID", "InvoiceDate"])
+    df["Year"] = df["InvoiceDate"].dt.year
+    df["Month"] = df["InvoiceDate"].dt.month
+    df["day_of_week"] = df["InvoiceDate"].dt.weekday
+    df["week"] = df["InvoiceDate"].dt.isocalendar().week.astype(int)
+
+    # Cohort
+    df["CohortMonth"] = (
+        df.groupby("CustomerID")["InvoiceDate"]
+        .transform("min")
+        .dt.to_period("M")
     )
 
-    # Month feature
-    
-    monthly['Month'] = monthly['YearMonth'].dt.month
-    
-
-    # Lag revenue
-    for lag in [1, 2, 3]:
-        monthly[f'LagRevenue{lag}'] = monthly.groupby('StockCode')['MonthlyRevenue'].shift(lag)
-
-    monthly = monthly.dropna()
-    return monthly
+    return df
 
 
 
-def product_features(df: pd.DataFrame):
+def process_holidays(df):
+    df = df.copy()
 
-    monthly_product = df.groupby(['StockCode', 'YearMonth']).agg(
-        MonthlyQuantity=('Quantity', 'sum'),
-        MonthlyRevenue=('Revenue', 'sum'),
-        TotalHolidayQuantity=('HolidayQuantity', 'sum')
-    ).reset_index()
+    df.columns = df.columns.str.lower().str.strip()
+    df = df[["date", "countryorregion", "holidayname"]].copy()
 
-    product_level = monthly_product.groupby('StockCode').agg(
-        TotalQuantitySold=('MonthlyQuantity', 'sum'),
-        TotalRevenue=('MonthlyRevenue', 'sum'),
-        AvgMonthlyQuantity=('MonthlyQuantity', 'mean'),
-        AvgMonthlyRevenue=('MonthlyRevenue', 'mean'),
-        ActiveMonthCount=('YearMonth', 'nunique'),
-        StdMonthlyQuantity=('MonthlyQuantity', 'std'),
-        PeakMonthSale=('MonthlyQuantity', 'max'),
-        TotalHolidayQuantity=('TotalHolidayQuantity', 'sum')
-    ).reset_index()
+    df["date"] = pd.to_datetime(df["date"])
 
-    product_level['HolidayRatio'] = (
-        product_level['TotalHolidayQuantity'] /
-        product_level['TotalQuantitySold']
+    df = df.dropna(subset=["date", "countryorregion"])
+    df = df.drop_duplicates(subset=["date", "countryorregion"])
+
+    df["day_of_week"] = df["date"].dt.weekday
+    df["month"] = df["date"].dt.month
+    df["is_weekend"] = df["date"].dt.weekday >= 5
+    df["month_end"] = df["date"].dt.is_month_end
+    df["month_start"] = df["date"].dt.is_month_start
+
+    df["holidayname"] = df["holidayname"].fillna("Unknown Holiday").astype(str).str.strip()
+    df["isholiday"] = 1
+
+    return df
+
+
+def merge_data(retail_df, holiday_df):
+    retail_df=retail_df.copy()
+    holiday_df=holiday_df.copy()
+    country_name_map = {
+    "Czech Republic": "Czech",
+    "EIRE": "Ireland",
+    "RSA": "South Africa",
+    "USA": "United States"
+}
+    retail_df["holiday_country"] = retail_df["Country"].astype(str).str.strip().replace(country_name_map)
+    holiday_df=holiday_df[["date","countryorregion","holidayname","isholiday"]].copy()
+    # FIX: align dates properly (IMPORTANT from your notebook issue)
+    retail_df["InvoiceDate"] = pd.to_datetime(retail_df["InvoiceDate"]).dt.date
+    holiday_df["date"] = pd.to_datetime(holiday_df["date"]).dt.date
+
+    df = pd.merge(
+        retail_df,
+        holiday_df,
+        left_on=["InvoiceDate", "holiday_country"],
+        right_on=["date", "countryorregion"],
+        how="left",
+        validate="m:1"
     )
 
-    pricing = df.groupby('StockCode').agg(
-        AvgUnitPrice=('UnitPrice', 'mean'),
-        PriceVariance=('UnitPrice', 'var')
-    ).reset_index()
+    # Fill missing holiday info
+    df["isholiday"] = df["isholiday"].fillna(0).astype(int)
+    df["holidayname"] = df["holidayname"].fillna("Non-holiday")
 
-    customer_eng = df.groupby('StockCode').agg(
-        UniqueCustomersCount=('CustomerID', 'nunique')
-    ).reset_index()
+    # Holiday impact feature
+    df["HolidayQuantity"] = df["Quantity"] * df["isholiday"]
 
-    product_kpis = (
-        product_level
-        .merge(pricing, on='StockCode', how='left')
-        .merge(customer_eng, on='StockCode', how='left')
-    )
+    # Drop unnecessary nulls
+    df = df.dropna(subset=["InvoiceNo", "StockCode", "Quantity", "UnitPrice", "InvoiceDate", "Revenue"])
+    df=df.drop(columns=["date", "countryorregion", "holiday_country"],errors="ignore")
 
-    product_kpis['HolidayRatio'] = product_kpis['HolidayRatio'].fillna(0)
-
-    return product_kpis
+    return df
 
 
-def customer_features(df: pd.DataFrame):
 
-    df['OrderValue'] = df['Quantity'] * df['UnitPrice']
+def final_clean(df):
+    df = df.copy()
 
-    # Total orders
-    total_orders = df.groupby('CustomerID')['InvoiceNo'].nunique().reset_index()
-    total_orders.columns = ['CustomerID', 'TotalOrders']
+    # Rename Month
+    if "Month" in df.columns:
+        df = df.rename(columns={"Month": "Month_num"})
 
-    # Recency
-    reference_date = df['InvoiceDate'].max()
+    # YearMonth feature
+    df["YearMonth"] = pd.to_datetime(df["InvoiceDate"]).dt.to_period("M")
 
-    recency = df.groupby('CustomerID')['InvoiceDate'].max().reset_index()
-    recency['Recency'] = (reference_date - recency['InvoiceDate']).dt.days
-    recency = recency[['CustomerID', 'Recency']]
+    return df
 
-    # Avg Order Value
-    order_revenue = df.groupby(['InvoiceNo', 'CustomerID'])['OrderValue'].sum().reset_index()
-    avg_order_value = order_revenue.groupby('CustomerID')['OrderValue'].mean().reset_index()
-    avg_order_value.columns = ['CustomerID', 'AvgOrderValue']
 
-    # Active months
-    df['YearMonth'] = df['InvoiceDate'].dt.to_period('M')
-    active_months = df.groupby('CustomerID')['YearMonth'].nunique().reset_index()
-    active_months.columns = ['CustomerID', 'ActiveMonth']
 
-    # Merge all
-    customer_kpis = total_orders.merge(active_months, on='CustomerID') \
-                                .merge(avg_order_value, on='CustomerID') \
-                                .merge(recency, on='CustomerID')
+def save(df):
+    output_path=BASE_DIR/"data"/"cleaned"/"online_retail_cleaned.csv"
+    output_path.parent.mkdir(parents=True,exist_ok=True)
 
-    customer_kpis['PurchaseFrequency'] = (
-        customer_kpis['TotalOrders'] / customer_kpis['ActiveMonth']
-    )
+    df.to_csv(output_path, index=False)
+    df.to_csv(BASE_DIR / "online_retail_clean_backup.csv", index=False)
 
-    # Outlier clipping
-    for col in ['AvgOrderValue', 'PurchaseFrequency', 'Recency']:
-        lower = customer_kpis[col].quantile(0.01)
-        upper = customer_kpis[col].quantile(0.99)
-        customer_kpis[col] = customer_kpis[col].clip(lower, upper)
 
-    return customer_kpis
 
-def run_feature_engineering(input_path: str,
-                            output_dir: str = "../data/processed/"):
+def run_pipeline():
+    retail, holidays = load_data()
 
-    df = load_data(input_path)
+    retail = initial_cleaning(retail)
 
-    output_dir = BASE_DIR / "data" / "processed"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    purchased, invalid, returns = split_datasets(retail)
 
-    # Product regression features
-    monthly_df = monthly_features(df)
-    monthly_df.to_csv(output_dir / "regression_features.csv", index=False)
+    purchased = standardize_text(purchased)
+    purchased = handle_outliers(purchased)
+    purchased = feature_engineering(purchased)
 
-    # Product KPIs
-    product_df = product_features(df)
-    product_df.to_csv(output_dir / "product_classification_features.csv", index=False)
+    holidays = process_holidays(holidays)
 
-    # Customer churn features
-    customer_df= customer_features(df)
-    customer_df.to_csv(output_dir / "customer_churn_features.csv", index=False)
+    final_df = merge_data(purchased, holidays)
+    final_df = final_clean(final_df)
 
-    
-    
-    
-    
-    print("Feature Engineering Completed Successfully!")
+    save(final_df)
+
+    print("Preprocessing completed")
 
 
 if __name__ == "__main__":
-    cleaned_online_retail_path=BASE_DIR/"data/cleaned/online_retail_cleaned.csv"
-    run_feature_engineering(cleaned_online_retail_path)
+    run_pipeline()
