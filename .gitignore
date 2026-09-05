@@ -12,6 +12,7 @@ __pycache__/
 # Models
 *.pkl
 *.joblib
+!models/sales_model.pkl
 
 # Jupyter
 .ipynb_checkpoints/
